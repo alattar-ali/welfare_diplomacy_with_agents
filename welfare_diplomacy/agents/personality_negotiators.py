@@ -6,9 +6,8 @@ Defines three types of personality based negotiators.
 """
 
 import json
-import operator
 import random
-from typing import Dict, List, Optional, Literal, Any, Annotated, Sequence, TypedDict
+from typing import Dict, List, Optional, Literal, Any, Sequence, TypedDict
 from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
@@ -65,7 +64,7 @@ class AgentState(BaseModel):
     phase: str
     received_messages: Dict[str, List[str]] = Field(default_factory=dict)
     messages_to_send: Dict[Powers, str] = Field(default_factory=dict)
-    opponent_model = Annotated[Dict[Powers, str], operator.add]
+    opponent_model: Dict[Powers, str] = Field(default_factory=dict)
 
 
 class PersonalityAgent(DiplomacyAgent):
@@ -77,9 +76,14 @@ class PersonalityAgent(DiplomacyAgent):
         super().__init__(game, pow_name, **params)
 
         self._personality = personality
-        self._system_prompt = (
-                Path().absolute() / "agents" / "personality_agent_prompts" / f"{self._personality}_system_prompt.txt"
-        ).read_text()
+        personality_to_prompt_file = {
+            "therapist": "therapist_system_prompt.txt",
+            "art-of-the-deal": "aggressive_system_prompt.txt",
+            "back_burner": "creative_system_prompt.txt",
+        }
+        prompt_dir = Path(__file__).resolve().parent / "personality_agent_prompts"
+        prompt_path = prompt_dir / personality_to_prompt_file[self._personality]
+        self._system_prompt = prompt_path.read_text()
 
         # Initialize LLM model with parameters
         self.model = self._build_model(params)
@@ -175,6 +179,17 @@ class PersonalityAgent(DiplomacyAgent):
                 messages[msg.sender].append(f"{msg.sender} said to {msg.recipient} that {msg.message}")
 
         return messages
+
+
+class DynamicPersonalityAgent(PersonalityAgent):
+    """
+    Backward-compatible placeholder for the previously experimental dynamic agent.
+    """
+
+    def __init__(self, game: diplomacy.Game, pow_name: str, **params):
+        # Preserve existing config compatibility by mapping dynamic agent requests
+        # to the currently maintained PersonalityAgent behavior.
+        super().__init__(game=game, pow_name=pow_name, personality="back_burner", **params)
 
 
 # class DynamicPersonalityAgent(DiplomacyAgent):

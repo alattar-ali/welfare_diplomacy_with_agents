@@ -4,9 +4,9 @@ game:
   max_years: 1
   max_message_rounds: 1
 wandb:
-  disable: true
+  disable: false
   run_name: null
-  entity: null
+  entity: alattar-ali-university-of-texas-at-austin
   project: temporary
   wandb_dir: './wandb_logs'
   save_code: false
@@ -17,70 +17,70 @@ logging:
   output_folder: games
 players:
   ENGLAND:
-    agent_class: DynamicPersonalityAgent
+    agent_class: WdAgent
     agent_params:
       api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      model_provider_url: "http://localhost:12434/engines/llama.cpp/v1/"
+      model: "ai/llama3.2"
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
   FRANCE:
-    agent_class: DynamicPersonalityAgent
+    agent_class: WdAgent
     agent_params:
       api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      model_provider_url: "http://localhost:12434/engines/llama.cpp/v1/"
+      model: "ai/llama3.2"
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
       max_message_rounds: 3
   ITALY:
-    agent_class: DynamicPersonalityAgent
+    agent_class: WdAgent
     agent_params:
       api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      model_provider_url: "http://localhost:12434/engines/llama.cpp/v1/"
+      model: "ai/llama3.2"
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
       max_message_rounds: 3
   GERMANY:
-    agent_class: DynamicPersonalityAgent
+    agent_class: WdAgent
     agent_params:
       api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      model_provider_url: "http://localhost:12434/engines/llama.cpp/v1/"
+      model: "ai/llama3.2"
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
       max_message_rounds: 3
   AUSTRIA:
-    agent_class: DynamicPersonalityAgent
+    agent_class: WdAgent
     agent_params:
       api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      model_provider_url: "http://localhost:12434/engines/llama.cpp/v1/"
+      model: "ai/llama3.2"
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
       max_message_rounds: 3
   RUSSIA:
-    agent_class: DynamicPersonalityAgent
+    agent_class: WdAgent
     agent_params:
       api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      model_provider_url: "http://localhost:12434/engines/llama.cpp/v1/"
+      model: "ai/llama3.2"
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
       max_message_rounds: 3
   TURKEY:
-    agent_class: DynamicPersonalityAgent
+    agent_class: WdAgent
     agent_params:
       api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      model_provider_url: "http://localhost:12434/engines/llama.cpp/v1/"
+      model: "ai/llama3.2"
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30

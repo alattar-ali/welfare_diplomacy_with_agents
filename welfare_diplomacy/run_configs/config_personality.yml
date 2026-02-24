@@ -4,9 +4,9 @@ game:
   max_years: 1
   max_message_rounds: 1
 wandb:
-  disable: true
+  disable: false
   run_name: null
-  entity: null
+  entity: https://wandb.ai/alattar-ali-university-of-texas-at-austin
   project: temporary
   wandb_dir: './wandb_logs'
   save_code: false
