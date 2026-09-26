@@ -1,5 +1,7 @@
 import diplomacy
 
+from welfare_diplomacy.agents.order_planner import LLMOrderPlanner
+
 
 class DiplomacyAgent:
     def __init__(self, game: diplomacy.Game, pow_name: str, **params):
@@ -8,6 +10,7 @@ class DiplomacyAgent:
         self.game = game
         self.pow_name = pow_name
         self._params = params
+        self._order_planner = None
 
         # Phase tracking
         self._curr_phase = None
@@ -27,4 +30,11 @@ class DiplomacyAgent:
         raise NotImplementedError("generate_messages method must be implemented in subclasses")
 
     def generate_orders(self):
-        raise NotImplementedError("generate_orders method must be implemented in subclasses")
+        if self._order_planner is None:
+            self._order_planner = LLMOrderPlanner(self.model)
+        return self._order_planner.generate_orders(
+            self.game,
+            self.pow_name,
+            personality=getattr(self, "_personality", None),
+            final_year=self._params.get("game_end_year"),
+        )

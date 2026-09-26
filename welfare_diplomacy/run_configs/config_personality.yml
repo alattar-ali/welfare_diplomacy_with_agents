@@ -1,13 +1,17 @@
+model_defaults: &model_defaults
+  model_provider_url: "https://api.openai.com/v1"
+  model: "gpt-4.1-mini"
+
 game:
   map_name: standard_welfare
   seed: 0
-  max_years: 1
-  max_message_rounds: 1
+  max_years: 10
+  max_message_rounds: 2
 wandb:
   disable: false
   run_name: null
-  entity: https://wandb.ai/alattar-ali-university-of-texas-at-austin
-  project: temporary
+  entity: alattar-ali-university-of-texas-at-austin
+  project: wd_environment
   wandb_dir: './wandb_logs'
   save_code: false
 logging:
@@ -19,9 +23,7 @@ players:
   ENGLAND:
     agent_class: PersonalityAgent
     agent_params:
-      api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      <<: *model_defaults
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
@@ -29,9 +31,7 @@ players:
   FRANCE:
     agent_class: PersonalityAgent
     agent_params:
-      api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      <<: *model_defaults
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
@@ -40,9 +40,7 @@ players:
   ITALY:
     agent_class: PersonalityAgent
     agent_params:
-      api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      <<: *model_defaults
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
@@ -51,9 +49,7 @@ players:
   GERMANY:
     agent_class: PersonalityAgent
     agent_params:
-      api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      <<: *model_defaults
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
@@ -62,9 +58,7 @@ players:
   AUSTRIA:
     agent_class: PersonalityAgent
     agent_params:
-      api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      <<: *model_defaults
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
@@ -73,9 +67,7 @@ players:
   RUSSIA:
     agent_class: PersonalityAgent
     agent_params:
-      api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      <<: *model_defaults
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30
@@ -84,9 +76,7 @@ players:
   TURKEY:
     agent_class: PersonalityAgent
     agent_params:
-      api_key: ollama
-      model_provider_url: 'http://localhost:11434/v1'
-      model: llama3.2
+      <<: *model_defaults
       temperature: 1
       top_p: 0.9
       max_completion_errors: 30

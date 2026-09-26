@@ -1,30 +1,21 @@
-"""
-Language model scaffolding to play Diplomacy.
-Logs:
-- Every message into a W&B Table
-- Every power's orders into the SAME W&B Table (one row per power per phase)
-- Board renderings to W&B as HTML:
-  - state_init, state_pre, with_orders, state_post
-"""
-
 import argparse
+import os
 import pprint
 import re
 import traceback
+import webbrowser
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Dict, Optional
 
 import wandb
 import yaml
 from loguru import logger
 from rich.progress import Progress
-from tqdm import tqdm
 
 import welfare_diplomacy.agents as agents
 from diplomacy import Game, Message
 
-CONFIG = "config0"
+CONFIG = "config_personality"
 
 RESPONSE_COLUMNS = [
     "row_type",       # "message" | "orders"
@@ -38,12 +29,12 @@ RESPONSE_COLUMNS = [
 ]
 
 
-def log_board_to_wandb(game: Game, step: int, tag: str):
-    """Logs a rendered HTML board to W&B."""
-    html = game.render(incl_abbrev=True)
+def log_board_to_wandb(game: Game, step: int):
+    """Log the board with submitted orders before the phase is adjudicated."""
+    html = game.render(incl_abbrev=True, incl_orders=True)
     wandb.log(
         {
-            f"board/{tag}": wandb.Html(html),
+            "board/with_orders": wandb.Html(html),
             "game/phase": str(game.get_current_phase()),
         },
         step=step,
@@ -59,11 +50,47 @@ def _extract_year_from_phase(phase: str) -> Optional[int]:
     return int(m.group(0)) if m else None
 
 
-def main():
+def redact_config_secrets(value):
+    """Remove API keys from configuration sent to logs and W&B."""
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if key == "api_key" else redact_config_secrets(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_config_secrets(item) for item in value]
+    return value
+
+
+def main(personality: Optional[str] = None):
+    # Show the run link and Rich progress indicators without verbose logs.
+    logger.remove()
+
     # Load configuration
     with open(f"run_configs/{CONFIG}.yml", "r") as file:
         game_config = yaml.safe_load(file)
-    logger.info(f"Loaded game configuration: \n{pprint.pformat(game_config)}")
+    if personality is not None:
+        for player in game_config["players"].values():
+            if player["agent_class"].lower() == "personalityagent":
+                player["agent_params"]["personality"] = personality
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise ValueError("Set the OPENAI_API_KEY environment variable.")
+    if not game_config["wandb"]["disable"] and not os.environ.get("WANDB_API_KEY"):
+        raise ValueError("Set the WANDB_API_KEY environment variable, or set wandb.disable to true.")
+
+    personalities = {
+        player["agent_params"].get("personality", "back_burner")
+        for player in game_config["players"].values()
+    }
+    personality_labels = {
+        "therapist": "Therapist", "art-of-the-deal": "Aggressive",
+        "back_burner": "Creative",
+    }
+    run_personality = personality_labels[next(iter(personalities))] if len(personalities) == 1 else "Mixed"
+    # Use local time for the run's start date and time.
+    game_config["wandb"]["run_name"] = f"{run_personality} Run {datetime.now():%Y-%m-%d %H-%M-%S}"
+    log_config = redact_config_secrets(game_config)
+    logger.info(f"Loaded game configuration: \n{pprint.pformat(log_config)}")
 
     # Initialize W&B
     wandb.init(
@@ -72,21 +99,22 @@ def main():
         dir=game_config["wandb"].get("wandb_dir", None),
         name=game_config["wandb"]["run_name"],
         save_code=game_config["wandb"]["save_code"],
-        config=game_config,
+        config=log_config,
         mode="disabled" if game_config["wandb"]["disable"] else "online",
-        settings=wandb.Settings(code_dir="."),
+        settings=wandb.Settings(code_dir=".", silent=True),
     )
     assert wandb.run is not None
+    if not game_config["wandb"]["disable"] and wandb.run.url:
+        run_url = wandb.run.url
+        print(f"W&B run: {run_url}", flush=True)
+        try:
+            webbrowser.open_new_tab(run_url)
+        except (webbrowser.Error, OSError):
+            # Keep running if no browser is available; the link is printed above.
+            pass
 
-    # Initialize data logging
-    data_dir = init_data_log_directory(
-        run_name=wandb.run.name,
-        prefix=Path(game_config["logging"]["output_folder"]).absolute(),
-    )
-    data = {"responses": []}
-
+    # Initialize the shared messages and orders table.
     wandb_responses = wandb.Table(columns=RESPONSE_COLUMNS, log_mode="MUTABLE")
-    logger.debug(f"Initialized data logging directory: {data_dir}")
 
     # Initialize game
     game: Game = initialize_game(
@@ -99,10 +127,7 @@ def main():
     players: Dict[str, agents.DiplomacyAgent] = initialize_players(game, game_config)
     logger.success(f"Players initialized: \n{pprint.pformat(players)}")
 
-    # W&B: initial board
     phase_step = 0
-    if not game_config["wandb"]["disable"]:
-        log_board_to_wandb(game, step=phase_step, tag="state_init")
 
     # Run main loop
     with Progress() as progress:
@@ -111,48 +136,39 @@ def main():
 
         while not game.is_game_done:
             current_phase = game.get_current_phase()
+            progress.update(progress_phases, description=f"[red]🔄️ Phases ({current_phase})")
             logger.info(f"🕰️  Beginning phase {current_phase}")
 
             # Start phase
             for _, agent in players.items():
                 agent.start_phase()
 
-            # W&B: pre-phase state
-            if not game_config["wandb"]["disable"]:
-                log_board_to_wandb(game, step=phase_step, tag="state_pre")
-
             # Negotiation phase (messages)
-            try:
-                run_negotiation_phase(
-                    game=game,
-                    players=players,
-                    game_config=game_config,
-                    progress=progress,
-                    log_dict=data,
-                    wandb_log_table=wandb_responses,
-                    step=phase_step,
-                )
-            except Exception as e:
-                logger.error(f"💥 Error during negotiation phase: \n{e}\n\n{traceback.format_exc()}")
-                break
+            run_negotiation_phase(
+                game=game,
+                players=players,
+                game_config=game_config,
+                progress=progress,
+                wandb_log_table=wandb_responses,
+                step=phase_step,
+            )
 
             # Movement phase (orders + log orders rows)
             try:
                 run_movement_phase(
                     game=game,
                     players=players,
-                    log_dict=data,
                     wandb_log_table=wandb_responses,
                 )
             except Exception as e:
                 logger.error(f"💥 Error during movement phase: \n{e}\n\n{traceback.format_exc()}")
-                break
+                raise
 
             # W&B: board with orders set
             if not game_config["wandb"]["disable"]:
                 # Push updated table after orders too (otherwise you'd only see order-rows after next log)
                 wandb.log({"responses": wandb_responses}, step=phase_step)
-                log_board_to_wandb(game, step=phase_step, tag="with_orders")
+                log_board_to_wandb(game, step=phase_step)
 
             # End phase hooks for agents
             for _, agent in players.items():
@@ -161,25 +177,21 @@ def main():
             # Adjudicate
             game.process()
 
-            # W&B: post-adjudication state
-            if not game_config["wandb"]["disable"]:
-                log_board_to_wandb(game, step=phase_step, tag="state_post")
-
             # Stop condition by year (safe parse)
             year = _extract_year_from_phase(game.get_current_phase())
             if year is not None and (year - 1900) > game_config["game"]["max_years"]:
                 game.finish()
 
-            # Game-level logs (placeholder)
+            # Commit this phase's logs with scores after adjudication.
             if not game_config["wandb"]["disable"]:
-                update_wandb_game_logs(game, players)
+                update_wandb_game_logs(game, step=phase_step, phase=current_phase)
 
             # Progress + step
             progress.update(progress_phases, advance=1)
             phase_step += 1
 
 
-def run_negotiation_phase(game, players, game_config, progress, log_dict, wandb_log_table, step: int):
+def run_negotiation_phase(game, players, game_config, progress, wandb_log_table, step: int):
     num_message_rounds = game_config["game"]["max_message_rounds"]
     progress_message_rounds = progress.add_task(
         description="[blue]🙊 Messages",
@@ -197,7 +209,6 @@ def run_negotiation_phase(game, players, game_config, progress, log_dict, wandb_
             str(msg_round),
             "",  # orders empty for message rows
         ]
-        log_dict["responses"].append(dict(zip(RESPONSE_COLUMNS, row)))
         wandb_log_table.add_data(*row)
 
     try:
@@ -219,8 +230,9 @@ def run_negotiation_phase(game, players, game_config, progress, log_dict, wandb_
 
                 progress.update(progress_message_rounds, advance=1)
 
-    except Exception as e:
-        logger.exception(f"💥 Error during negotiation phase: \n{e}\n\n{traceback.format_exc()}")
+    except Exception:
+        logger.exception("Negotiation failed; stopping the run before orders.")
+        raise
 
     finally:
         # Upload table at end of negotiation phase
@@ -229,7 +241,7 @@ def run_negotiation_phase(game, players, game_config, progress, log_dict, wandb_
         progress.remove_task(progress_message_rounds)
 
 
-def run_movement_phase(game, players, log_dict, wandb_log_table):
+def run_movement_phase(game, players, wandb_log_table):
     # collect orders
     orders = {}
     for power_name, agent in players.items():
@@ -257,45 +269,27 @@ def run_movement_phase(game, players, log_dict, wandb_log_table):
             "",  # message_round empty
             str(order_list),
         ]
-        log_dict["responses"].append(dict(zip(RESPONSE_COLUMNS, row)))
         wandb_log_table.add_data(*row)
 
     return orders
 
 
-def update_wandb_player_logs(game, power_name, agent, messages):
-    pass
-
-
-def update_internal_player_logs(data, game, power_name, agent, messages):
-    pass
-
-
-def update_wandb_game_logs(game, players):
-    pass
-
-
-def update_internal_game_logs(data, game, players):
-    pass
-
-
-def init_data_log_directory(run_name: str, prefix: Path = Path() / "out", overwrite: bool = False) -> Path:
-    """
-    :return: Path to the directory where data will be logged.
-    """
-    current_time = datetime.now()
-    dir_name = f"{current_time.strftime('%Y_%m_%d')}_{current_time.strftime('%H_%M')}_{run_name}"
-    full_path = prefix / dir_name if prefix else Path(dir_name)
-
-    if full_path.exists():
-        if not overwrite:
-            raise FileExistsError(f"Directory '{full_path}' already exists and overwrite is set to False.")
-        else:
-            # NOTE: rmdir only removes empty directories; keep as-is to match your original behavior.
-            full_path.rmdir()
-
-    full_path.mkdir(parents=True, exist_ok=True)
-    return full_path
+def update_wandb_game_logs(game: Game, *, step: int, phase: str):
+    """Log accumulated scores for the phase that just finished."""
+    scores = {name: power.welfare_points for name, power in sorted(game.powers.items())}
+    table = wandb.Table(columns=["country", "welfare_points"], data=[[name, score] for name, score in scores.items()])
+    wandb.log(
+        {
+            **{f"welfare_points/{name}": score for name, score in scores.items()},
+            "welfare_points/total": sum(scores.values()),
+            "welfare_points/by_country": wandb.plot.bar(
+                table, "country", "welfare_points", title=f"Accumulated welfare points after {phase}",
+            ),
+            "game/completed_phase": phase,
+        },
+        step=step,
+        commit=True,
+    )
 
 
 def initialize_game(map_name: str, max_message_rounds: int) -> Game:
@@ -315,22 +309,22 @@ def initialize_players(game, game_config):
     for name, params in game_config["players"].items():
         agent_cls_name = params["agent_class"]
         agent_cls = agents.get_class(agent_cls_name)
-        power_name_to_agent[name] = agent_cls(game=game, pow_name=name, **params["agent_params"])
+        agent_params = dict(params["agent_params"])
+        agent_params["game_end_year"] = 1900 + game_config["game"]["max_years"]
+        power_name_to_agent[name] = agent_cls(game=game, pow_name=name, **agent_params)
 
     return power_name_to_agent
 
 
-def parse_args():
-    """(unused in this config-driven version)"""
-    parser = argparse.ArgumentParser()
-    return vars(parser.parse_args())
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Run a Welfare Diplomacy simulation.")
+    parser.add_argument(
+        "--personality",
+        choices=("therapist", "art-of-the-deal", "back_burner"),
+        help="Set all PersonalityAgent players to this personality for this run; defaults to the YAML settings.",
+    )
+    return vars(parser.parse_args(argv))
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as exc:
-        tqdm.write("\n\n\n")
-        exception_trace = "".join(traceback.TracebackException.from_exception(exc).format())
-        tqdm.write("\n\n\n")
-        raise exc
+    main(**parse_args())
